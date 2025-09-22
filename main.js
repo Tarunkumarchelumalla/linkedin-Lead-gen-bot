@@ -14,6 +14,8 @@ app.post('/scrape', async (req, res) => {
     }
 
     try {
+        const cookies = JSON.parse(req.body.cookies);
+
         if (!Array.isArray(cookies)) {
             throw new Error('"cookies" must be an array');
         }
