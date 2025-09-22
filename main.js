@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
                 input = JSON.parse(inputArg.replace('--input=', ''));
             } else {
                 input = {
-                    searchUrl: 'https://www.linkedin.com/search/results/people/?keywords=n8n%20automation%20workflow',
+                    searchUrl: 'https://www.linkedin.com/search/results/people/?keywords=ai%20content%20backlash%20forecasted',
                     cookiesFile: 'cookies.json',
                 };
             }
@@ -48,8 +48,30 @@ import { chromium } from 'playwright';
         await context.addCookies(cookies);
         const page = await context.newPage();
 
-        console.log(`Opening LinkedIn search page: ${searchUrl}`);
-        await page.goto(searchUrl, { waitUntil: 'networkidle' });
+        // Retry navigation up to 3 times
+        let success = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                console.log(`Opening LinkedIn page (attempt ${attempt}/3): ${searchUrl}`);
+                await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                success = true;
+                break;
+            } catch (err) {
+                console.error(`Navigation failed on attempt ${attempt}:`, err.message);
+                if (attempt < 3) {
+                    console.log('Retrying in 5s...');
+                    await page.waitForTimeout(5000);
+                } else {
+                    throw err; // rethrow after 3rd failure
+                }
+            }
+        }
+
+        if (!success) throw new Error('Failed to open page after 3 attempts.');
+
+        // Give LinkedIn’s feed/activity page time to populate
+        console.log('Waiting for feed to load...');
+        await page.waitForTimeout(8000);
 
         // Infinite scroll - scroll down 5 times with delay
         for (let i = 0; i < 5; i++) {
@@ -58,46 +80,19 @@ import { chromium } from 'playwright';
             await page.waitForTimeout(3000);
         }
 
-        // ----- Scrape profiles using tags and attributes only -----
-        // ----- Scrape profiles using tags and attributes only -----
-        const profiles = await page.$$eval('ul[role="list"] > li', items =>
-            items.map(li => {
-              const resultEl = li.querySelector('[data-chameleon-result-urn]') || li;
-              const urn = resultEl.getAttribute('data-chameleon-result-urn') || null;
-          
-              const linkedArea = resultEl.querySelector('.linked-area') || resultEl;
-              const childDivs = Array.from(linkedArea.children).filter(n => n.tagName === 'DIV');
-              const firstDiv = childDivs[0] || linkedArea;
-              const secondDiv = childDivs[1] || linkedArea;
-          
-              // Profile link & name from SAME <a>
-              const profileAnchor = firstDiv.querySelector('a[href*="/in/"], a[data-test-app-aware-link]');
-              const profileUrl = profileAnchor?.href || null;
-              const name = secondDiv?.querySelector('span[aria-hidden="true"]')?.textContent?.trim() || null;
-          
-              // Profile picture
-              const profilePic = firstDiv.querySelector('img')?.src || null;
-          
-              // Headline
-              const headline = secondDiv.querySelector('.t-14.t-black.t-normal')?.textContent?.trim() || null;
-          
-              // Location
-              let location = null;
-              const headlineEl = secondDiv.querySelector('.t-14.t-black.t-normal');
-              if (headlineEl?.nextElementSibling?.classList.contains('t-14') &&
-                  headlineEl?.nextElementSibling?.classList.contains('t-normal')) {
-                location = headlineEl.nextElementSibling.textContent?.trim() || null;
-              }
-          
-              // Summary
-              const summary = secondDiv.querySelector('p.entity-result__summary--2-lines')?.textContent?.trim() || null;
-          
-              return { urn, name, profileUrl, profilePic, headline, location, summary, followers: null };
-            })
-          );
-          
-        console.log(`Scraped ${profiles.length} profiles`);
-        await Actor.pushData(profiles);
+        // ----- Scrape posts instead of profiles -----
+        const posts = await page.$$eval(
+            '.scaffold-finite-scroll__content ul > li',
+            (items) =>
+                items.map((li) => {
+                    const contentEl = li.querySelector('.break-words.tvm-parent-container');
+                    const content = contentEl?.innerText?.trim() || null;
+                    return { content };
+                }).filter(p => p.content) // only keep non-empty
+        );
+
+        console.log(`Scraped ${posts.length} posts`);
+        await Actor.pushData(posts);
 
         await browser.close();
         await Actor.exit();
