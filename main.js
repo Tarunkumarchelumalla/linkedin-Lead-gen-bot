@@ -15,7 +15,7 @@ app.post('/scrape', async (req, res) => {
 
     try {
         const cookies = JSON.parse(req.body.cookies);
-
+        console.log({cookies});
         if (!Array.isArray(cookies)) {
             throw new Error('"cookies" must be an array');
         }
@@ -56,7 +56,7 @@ app.post('/scrape', async (req, res) => {
             await page.mouse.wheel(0, 1500);
             await page.waitForTimeout(3000);
         }
-
+        console.log('scrolled five times');
         // Scrape posts
         const posts = await page.$$eval(
             '.scaffold-finite-scroll__content ul > li',
@@ -69,7 +69,7 @@ app.post('/scrape', async (req, res) => {
                     })
                     .filter((p) => p.content)
         );
-
+        console.log('scraped posts');
         await browser.close();
 
         return res.json({
